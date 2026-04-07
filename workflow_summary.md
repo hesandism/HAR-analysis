@@ -5,6 +5,121 @@ This project builds and evaluates a Human Activity Recognition (HAR) pipeline on
 
 ---
 
+## Project Overview (Paper-Ready)
+
+### 1) Problem Definition
+- Goal: classify human activities from smartphone inertial sensor signals.
+- Prediction target: activity class label.
+- Dataset: UCI HAR Dataset.
+- Task type: multiclass classification.
+- Number of classes: 6 activities.
+
+Target classes:
+- WALKING
+- WALKING_UPSTAIRS
+- WALKING_DOWNSTAIRS
+- SITTING
+- STANDING
+- LAYING
+
+### 2) Dataset Details
+- Original feature count: 561 engineered time/frequency-domain features.
+- Train samples: 7352.
+- Test samples: 2947.
+- Total samples: 10299.
+- Split used in workflow: original UCI HAR train/test split (not random re-split).
+
+Feature-space evolution in this project:
+- 561 original features.
+- 525 features after near-zero variance filtering.
+- 257 features after correlation pruning.
+
+### 3) Preprocessing Steps
+1. Label handling and encoding consistency
+  - Baseline pipeline converts activity IDs to zero-based indexing where needed.
+  - For XGBoost compatibility, labels must be contiguous and start at 0 for multiclass training. In this project context, this means handling potential 1..6 labels before XGBoost fitting.
+2. Low-variance filtering
+  - `VarianceThreshold(threshold=0.01)` removed 37 low-information features.
+3. Univariate feature scoring
+  - `SelectKBest(f_classif)` used to score and rank discriminative features.
+4. K-sweep feature-count selection
+  - Tried k values from 50 to 525 to identify strong feature counts.
+5. Redundancy reduction
+  - Correlation filter with `|r| > 0.95` reduced duplicated signal information.
+
+Notes on other preprocessing methods:
+- Standardization (`StandardScaler`): present in earlier experimentation, but the final reported improved run is based on the variance + SelectKBest + correlation workflow.
+- PCA: explored during experimentation history, not used in the final comparison table in this report.
+- SMOTE/imbalance handling: not used in the final workflow.
+
+### 4) Models Used
+Baseline models:
+- Decision Tree
+- Random Forest
+- Logistic Regression
+- Linear SVC
+- RBF SVM
+- K-Nearest Neighbor
+
+Improved/additional models:
+- Extra Trees
+- Hist Gradient Boosting
+- Tuned Random Forest
+- Tuned Logistic Regression
+- Tuned RBF SVM
+- XGBoost
+
+### 5) Evaluation Metrics
+- Accuracy
+- Precision (weighted)
+- Recall (weighted)
+- F1-score (weighted)
+- Training time
+- Classification report for selected best model analysis
+- Confusion matrix visualization (classification diagnostics in notebook workflow)
+
+Regression-only metrics such as RMSE are not applicable because this project is strictly classification.
+
+### 6) Results Snapshot
+Representative results from this project:
+- Baseline best: Linear SVC, Accuracy = 0.97.
+- Improved final best group: Logistic Regression / Linear SVC / Extra Trees / Tuned Logistic Regression, Accuracy = 0.95.
+- Improved Random Forest: Accuracy = 0.94 (up from 0.92 in baseline).
+- XGBoost in final improved table: Accuracy = 0.94.
+- Best ensemble (latest): Stacking (Top models), Accuracy = 0.9511.
+
+### 7) Key Observations
+- The best absolute accuracy was achieved in the baseline configuration (Linear SVC: 0.97).
+- Feature-selection and redundancy-pruning reduced dimensionality substantially (561 -> 257) and improved compactness.
+- Tree ensembles benefited in some cases (Random Forest improved from 0.92 to 0.94).
+- Some linear/SVM peaks slightly decreased after aggressive feature reduction (for example, Linear SVC 0.97 -> 0.95).
+- Tuned Logistic Regression matched top improved accuracy but had high training cost, indicating weaker accuracy-time tradeoff.
+- No major imbalance-correction strategy was required in the final run.
+- The latest ensemble notebook confirms complementarity across model families: stacking slightly improves over most single improved models (0.9511 vs ~0.95), but still does not exceed the baseline 0.97 peak.
+
+### 8) Folder Structure (Practical Layout)
+Suggested paper/reproducibility layout:
+
+```text
+HAR/
+  data/
+   X_train.csv
+   X_test.csv
+   y_train.csv
+   y_test.csv
+   UCI-HAR-Dataset/
+  models.py
+  baseline.ipynb
+  Improved_nb.ipynb
+  ensemble.ipynb
+  baseline_results.csv
+  result_after_feature_selection.csv
+  ensemble_results.csv
+  workflow_summary.md
+```
+
+---
+
 ## 1) Baseline Workflow (baseline.ipynb)
 
 ### 1.1 Data preparation and sanity checks
@@ -130,9 +245,69 @@ Interpretation:
 - Tuned Logistic Regression matches 0.95 but is much slower (43.15s), indicating weaker accuracy-time tradeoff.
 - XGBoost reaches 0.94 in current configuration.
 
+### 4.4 Ensemble results vs baseline and improved
+- Best ensemble notebook result: **Stacking (Top models)** with Accuracy **0.9511**.
+- Ensemble variants in latest run:
+  - Stacking (Top models): 0.9511
+  - Hard Voting (Top models): 0.9471
+  - Soft Voting (Proba models): 0.9420
+- Best single models inside ensemble study:
+  - Extra Trees: 0.9505
+  - XGBoost: 0.9406
+  - Tuned RBF SVM: 0.9393
+  - Hist Gradient Boosting: 0.9382
+- Relative conclusion:
+  - Stacking provides a small but consistent uplift over most individual improved models.
+  - It is still below the original baseline best (Linear SVC at 0.97).
+
 ---
 
-## 5) Research-Paper Ready Narrative
+## 5) Ensemble Workflow (ensemble.ipynb)
+
+### 5.1 Motivation
+The ensemble notebook explicitly follows this rationale:
+- Individual models have complementary strengths.
+- Tree-based methods capture non-linear interactions.
+- Linear/SVM methods perform well on high-dimensional sensor features.
+- Combining them can improve robustness and generalization.
+
+### 5.2 Preprocessing consistency
+To maintain comparability, the ensemble notebook reuses the same improved preprocessing path:
+- VarianceThreshold(0.01) -> 525 features.
+- SelectKBest k-sweep -> best k = 525.
+- Correlation pruning (|r| > 0.95) -> 257 final features.
+- Final matrix shapes:
+  - Train: (7352, 257)
+  - Test: (2947, 257)
+
+### 5.3 Systematic model selection (5-fold stratified CV)
+Top-ranked models by CV accuracy mean in the ensemble notebook:
+1. Hist Gradient Boosting: 0.9944 (+/- 0.0014)
+2. XGBoost: 0.9924 (+/- 0.0016)
+3. Tuned RBF SVM: 0.9882 (+/- 0.0021)
+4. Extra Trees: 0.9844 (+/- 0.0031)
+
+These top models were used to construct voting/stacking ensembles.
+
+### 5.4 Ensemble performance on held-out test set
+| Model | Type | Accuracy | F1-Weighted | Precision-Weighted | Recall-Weighted |
+|---|---|---:|---:|---:|---:|
+| Stacking (Top models) | Ensemble | **0.9511** | 0.9510 | 0.9523 | 0.9511 |
+| Extra Trees | Individual | 0.9505 | 0.9501 | 0.9521 | 0.9505 |
+| Hard Voting (Top models) | Ensemble | 0.9471 | 0.9469 | 0.9480 | 0.9471 |
+| Soft Voting (Proba models) | Ensemble | 0.9420 | 0.9418 | 0.9430 | 0.9420 |
+| XGBoost | Individual | 0.9406 | 0.9404 | 0.9417 | 0.9406 |
+| Tuned RBF SVM | Individual | 0.9393 | 0.9391 | 0.9405 | 0.9393 |
+| Hist Gradient Boosting | Individual | 0.9382 | 0.9381 | 0.9391 | 0.9382 |
+
+### 5.5 Benchmark conclusion
+- Ensemble benchmark target range in notebook: 0.95 to 0.97.
+- Achieved: **0.9511** (target range reached).
+- Global project best remains baseline Linear SVC at 0.97.
+
+---
+
+## 6) Research-Paper Ready Narrative
 
 A concise narrative for the paper:
 1. Start with a broad baseline on full engineered HAR features and benchmark multiple classifier families.
@@ -147,9 +322,11 @@ A concise narrative for the paper:
 
 ---
 
-## 6) Artifacts Produced
+## 7) Artifacts Produced
 - Baseline metrics export: `baseline_results.csv`
 - Post-selection metrics export: `result_after_feature_selection.csv`
+- Ensemble metrics export: `ensemble_results.csv`
 - Shared model/training logic: `models.py`
 - Baseline workflow notebook: `baseline.ipynb`
 - Improved workflow notebook: `Improved_nb.ipynb`
+- Ensemble workflow notebook: `ensemble.ipynb`
