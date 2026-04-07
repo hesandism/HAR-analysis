@@ -87,6 +87,7 @@ Representative results from this project:
 - Improved Random Forest: Accuracy = 0.94 (up from 0.92 in baseline).
 - XGBoost in final improved table: Accuracy = 0.94.
 - Best ensemble (latest): Stacking (Top models), Accuracy = 0.9511.
+- Hyperparameter optimization workflow added in a dedicated notebook; execution results pending.
 
 ### 7) Key Observations
 - The best absolute accuracy was achieved in the baseline configuration (Linear SVC: 0.97).
@@ -112,9 +113,12 @@ HAR/
   baseline.ipynb
   Improved_nb.ipynb
   ensemble.ipynb
+  hyper_parameter.ipynb
   baseline_results.csv
   result_after_feature_selection.csv
   ensemble_results.csv
+  hyperparameter_tuning_cv.csv
+  hyperparameter_tuned_test.csv
   workflow_summary.md
 ```
 
@@ -322,11 +326,50 @@ A concise narrative for the paper:
 
 ---
 
-## 7) Artifacts Produced
+## 7) Hyperparameter Optimization Workflow (hyper_parameter.ipynb)
+
+### 7.1 Purpose
+The hyperparameter notebook adds systematic tuning on top of the improved preprocessing so model comparisons are not limited to default settings.
+
+### 7.2 Pipeline design
+The notebook follows this sequence:
+1. Load `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`.
+2. Apply the same improved preprocessing path used elsewhere:
+  - VarianceThreshold(0.01)
+  - SelectKBest (k selected by sweep)
+  - Correlation pruning (`|r| > 0.95`)
+3. Define model-specific search spaces for:
+  - Logistic Regression
+  - RBF SVM
+  - Random Forest
+  - Extra Trees
+  - Hist Gradient Boosting
+  - XGBoost (if available)
+4. Run `RandomizedSearchCV` with stratified 5-fold cross-validation.
+5. Evaluate best estimators on held-out test data.
+6. Export:
+  - `hyperparameter_tuning_cv.csv` (best CV scores + parameters)
+  - `hyperparameter_tuned_test.csv` (held-out test metrics)
+
+### 7.3 Current status
+- Notebook scaffold is complete and aligned with the main workflow.
+- At the time of this summary update, notebook cells are not executed yet, so numeric tuned results are pending.
+
+### 7.4 Expected contribution to the study
+- Reduces risk of under-reporting model capacity due to untuned defaults.
+- Improves fairness in model-family comparison.
+- Supports stronger claims in the paper about performance ceilings and tradeoffs.
+
+---
+
+## 8) Artifacts Produced
 - Baseline metrics export: `baseline_results.csv`
 - Post-selection metrics export: `result_after_feature_selection.csv`
 - Ensemble metrics export: `ensemble_results.csv`
+- Hyperparameter CV export: `hyperparameter_tuning_cv.csv` (generated after running notebook)
+- Hyperparameter held-out test export: `hyperparameter_tuned_test.csv` (generated after running notebook)
 - Shared model/training logic: `models.py`
 - Baseline workflow notebook: `baseline.ipynb`
 - Improved workflow notebook: `Improved_nb.ipynb`
 - Ensemble workflow notebook: `ensemble.ipynb`
+- Hyperparameter workflow notebook: `hyper_parameter.ipynb`
