@@ -338,27 +338,81 @@ The notebook follows this sequence:
   - VarianceThreshold(0.01)
   - SelectKBest (k selected by sweep)
   - Correlation pruning (`|r| > 0.95`)
-3. Define model-specific search spaces for:
+3. Define compact candidate parameter sets for faster tuning of:
   - Logistic Regression
-  - RBF SVM
+  - Linear SVC
   - Random Forest
-  - Extra Trees
   - Hist Gradient Boosting
   - XGBoost (if available)
-4. Run `RandomizedSearchCV` with stratified 5-fold cross-validation.
+4. Run fast model selection using stratified 3-fold cross-validation (`cross_val_score`) over the compact parameter candidates.
 5. Evaluate best estimators on held-out test data.
 6. Export:
   - `hyperparameter_tuning_cv.csv` (best CV scores + parameters)
   - `hyperparameter_tuned_test.csv` (held-out test metrics)
+  - `hyperparameter_tuned_cv_validation.csv` (5-fold CV validation metrics)
+  - `hyperparameter_tuned_test_validation.csv` (final held-out validation metrics)
 
-### 7.3 Current status
-- Notebook scaffold is complete and aligned with the main workflow.
-- At the time of this summary update, notebook cells are not executed yet, so numeric tuned results are pending.
+### 7.3 Tuning results (executed)
 
-### 7.4 Expected contribution to the study
+Best cross-validation results (`hyperparameter_tuning_cv.csv`):
+
+| Model | Best CV Accuracy | Selected Parameters |
+|---|---:|---|
+| Hist Gradient Boosting | **0.9946** | `learning_rate=0.08`, `max_depth=10`, `max_iter=300`, `min_samples_leaf=30`, `l2_regularization=0.01` |
+| XGBoost | 0.9916 | `n_estimators=200`, `max_depth=5`, `learning_rate=0.08`, `subsample=0.8`, `colsample_bytree=0.8`, `reg_lambda=1.0` |
+| Random Forest | 0.9793 | `n_estimators=200`, `max_depth=None`, `min_samples_split=2`, `min_samples_leaf=1`, `max_features=sqrt` |
+| Linear SVC | 0.9781 | `C=0.3` |
+| Logistic Regression | 0.9773 | `C=3.0`, `solver=saga` |
+
+Held-out test results (`hyperparameter_tuned_test.csv`):
+
+| Model | Accuracy | Precision (weighted) | Recall (weighted) | F1-score (weighted) |
+|---|---:|---:|---:|---:|
+| Linear SVC | **0.9525** | 0.9546 | 0.9525 | 0.9527 |
+| Logistic Regression | 0.9501 | 0.9519 | 0.9501 | 0.9501 |
+| XGBoost | 0.9423 | 0.9434 | 0.9423 | 0.9421 |
+| Random Forest | 0.9410 | 0.9420 | 0.9410 | 0.9407 |
+| Hist Gradient Boosting | 0.9369 | 0.9376 | 0.9369 | 0.9368 |
+
+### 7.4 Simple parameter reasoning
+- Logistic Regression (`C=3.0`, `solver=saga`): slightly weaker regularization (higher `C`) improves class separation on selected features; `saga` is robust for larger sparse/high-dimensional setups and supports flexible optimization behavior.
+- Linear SVC (`C=0.3`): stronger regularization helps prevent overfitting and improved generalization on the held-out split.
+- Random Forest (`n_estimators=200`, deep trees, `max_features=sqrt`): enough trees for stable voting without excessive runtime; `sqrt` feature subsampling increases tree diversity and helps generalization.
+- Hist Gradient Boosting (`learning_rate=0.08`, `max_iter=300`, depth/leaf constraints): moderate learning rate with enough boosting rounds balances fit quality and stability; `min_samples_leaf` and `l2_regularization` reduce overfitting.
+- XGBoost (`n_estimators=200`, `max_depth=5`, `subsample=0.8`, `colsample_bytree=0.8`, `reg_lambda=1.0`): medium-complex trees and row/column subsampling improve robustness; L2 regularization keeps model variance controlled.
+
+### 7.5 Contribution to the study
 - Reduces risk of under-reporting model capacity due to untuned defaults.
-- Improves fairness in model-family comparison.
-- Supports stronger claims in the paper about performance ceilings and tradeoffs.
+- Improves fairness in model-family comparison under the same preprocessing pipeline.
+- Adds an explicit accuracy-vs-complexity perspective: best CV model (Hist Gradient Boosting) is not the best held-out model (Linear SVC), reinforcing the need for final test validation.
+
+### 7.6 Final validation results (5-fold CV + held-out)
+
+Validation cross-validation results (`hyperparameter_tuned_cv_validation.csv`):
+
+| Model | CV Accuracy Mean | CV Accuracy Std | CV Precision Mean | CV Recall Mean | CV F1 Mean | CV Balanced Acc Mean |
+|---|---:|---:|---:|---:|---:|---:|
+| Hist Gradient Boosting | **0.9954** | 0.0017 | 0.9954 | 0.9954 | 0.9954 | 0.9956 |
+| XGBoost | 0.9925 | 0.0011 | 0.9925 | 0.9925 | 0.9925 | 0.9928 |
+| Random Forest | 0.9814 | 0.0032 | 0.9815 | 0.9814 | 0.9814 | 0.9820 |
+| Linear SVC | 0.9785 | 0.0034 | 0.9786 | 0.9785 | 0.9785 | 0.9801 |
+| Logistic Regression | 0.9782 | 0.0044 | 0.9784 | 0.9782 | 0.9782 | 0.9798 |
+
+Held-out validation test results (`hyperparameter_tuned_test_validation.csv`):
+
+| Model | Test Accuracy | Test Precision | Test Recall | Test F1 | Test Balanced Acc |
+|---|---:|---:|---:|---:|---:|
+| Linear SVC | **0.9525** | 0.9546 | 0.9525 | 0.9527 | 0.9530 |
+| Logistic Regression | 0.9501 | 0.9519 | 0.9501 | 0.9501 | 0.9498 |
+| XGBoost | 0.9423 | 0.9434 | 0.9423 | 0.9421 | 0.9410 |
+| Random Forest | 0.9410 | 0.9420 | 0.9410 | 0.9407 | 0.9380 |
+| Hist Gradient Boosting | 0.9369 | 0.9376 | 0.9369 | 0.9368 | 0.9360 |
+
+### 7.7 Quick insights
+- CV and test rankings are not identical: Hist Gradient Boosting leads in CV, but Linear SVC gives the strongest held-out generalization.
+- Linear models (Linear SVC and Logistic Regression) show the best accuracy-time-generalization tradeoff in this tuned setup.
+- Tree boosting models achieve very high CV scores, but their held-out drop suggests mild overfitting under current feature set and parameter candidates.
+- Balanced accuracy tracks overall weighted metrics closely, indicating no severe class-level collapse in final tuned predictions.
 
 ---
 
@@ -368,6 +422,8 @@ The notebook follows this sequence:
 - Ensemble metrics export: `ensemble_results.csv`
 - Hyperparameter CV export: `hyperparameter_tuning_cv.csv` (generated after running notebook)
 - Hyperparameter held-out test export: `hyperparameter_tuned_test.csv` (generated after running notebook)
+- Hyperparameter 5-fold CV validation export: `hyperparameter_tuned_cv_validation.csv`
+- Hyperparameter held-out validation export: `hyperparameter_tuned_test_validation.csv`
 - Shared model/training logic: `models.py`
 - Baseline workflow notebook: `baseline.ipynb`
 - Improved workflow notebook: `Improved_nb.ipynb`
